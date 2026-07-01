@@ -1,11 +1,15 @@
 ﻿using PCSC;
 using PCSC.Iso7816;
+using EcoTrack.HardwareBridge.Models;
+using EcoTrack.HardwareBridge.Services;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 Console.WriteLine("EcoTrack Hardware Bridge");
-Console.WriteLine("RFID monitor mode");
+Console.WriteLine("RFID monitor + WebSocket mode");
 Console.WriteLine();
+
+var webSocketService = new WebSocketService();
 
 using var context = ContextFactory.Instance.Establish(SCardScope.System);
 var readers = context.GetReaders();
@@ -21,6 +25,7 @@ string? lastUid = null;
 var cardPresent = false;
 
 Console.WriteLine($"Using reader: {readerName}");
+Console.WriteLine("WebSocket listening on ws://localhost:5001");
 Console.WriteLine("Place RFID card on reader...");
 Console.WriteLine();
 
@@ -54,6 +59,13 @@ while (true)
             if (!cardPresent || uid != lastUid)
             {
                 Console.WriteLine($"Card detected: {uid}");
+
+                webSocketService.Broadcast(new RfidEvent
+                {
+                    Uid = uid,
+                    ReadAt = DateTime.UtcNow
+                });
+
                 lastUid = uid;
                 cardPresent = true;
             }
