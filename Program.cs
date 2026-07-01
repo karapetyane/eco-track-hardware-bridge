@@ -4,7 +4,7 @@ using PCSC.Iso7816;
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 Console.WriteLine("EcoTrack Hardware Bridge");
-Console.WriteLine("RFID UID reader mode");
+Console.WriteLine("RFID monitor mode");
 Console.WriteLine();
 
 using var context = ContextFactory.Instance.Establish(SCardScope.System);
@@ -17,6 +17,8 @@ if (readers == null || readers.Length == 0)
 }
 
 var readerName = readers[0];
+string? lastUid = null;
+var cardPresent = false;
 
 Console.WriteLine($"Using reader: {readerName}");
 Console.WriteLine("Place RFID card on reader...");
@@ -48,13 +50,24 @@ while (true)
         if (response.SW1 == 0x90 && response.SW2 == 0x00)
         {
             var uid = BitConverter.ToString(response.GetData()).Replace("-", "");
-            Console.WriteLine($"Card UID: {uid}");
-        }
 
-        Thread.Sleep(2000);
+            if (!cardPresent || uid != lastUid)
+            {
+                Console.WriteLine($"Card detected: {uid}");
+                lastUid = uid;
+                cardPresent = true;
+            }
+        }
     }
     catch
     {
-        Thread.Sleep(500);
+        if (cardPresent)
+        {
+            Console.WriteLine("Card removed");
+            cardPresent = false;
+            lastUid = null;
+        }
     }
+
+    Thread.Sleep(300);
 }
