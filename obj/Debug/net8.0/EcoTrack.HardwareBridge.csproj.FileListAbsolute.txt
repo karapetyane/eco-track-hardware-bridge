@@ -1,0 +1,17 @@
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\bin\Debug\net8.0\EcoTrack.HardwareBridge.exe
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\bin\Debug\net8.0\EcoTrack.HardwareBridge.deps.json
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\bin\Debug\net8.0\EcoTrack.HardwareBridge.runtimeconfig.json
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\bin\Debug\net8.0\EcoTrack.HardwareBridge.dll
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\bin\Debug\net8.0\EcoTrack.HardwareBridge.pdb
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\EcoTrack.HardwareBridge.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\EcoTrack.HardwareBridge.AssemblyInfoInputs.cache
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\EcoTrack.HardwareBridge.AssemblyInfo.cs
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\EcoTrack.HardwareBridge.csproj.CoreCompileInputs.cache
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\EcoTrack.HardwareBridge.dll
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\refint\EcoTrack.HardwareBridge.dll
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\EcoTrack.HardwareBridge.pdb
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\EcoTrack.HardwareBridge.genruntimeconfig.cache
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\ref\EcoTrack.HardwareBridge.dll
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\bin\Debug\net8.0\PCSC.dll
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\EcoTrack.HardwareBridge.csproj.AssemblyReference.cache
+C:\Users\Eduard\Projects\eco-track-hardware-bridge\EcoTrack.HardwareBridge\obj\Debug\net8.0\EcoTrack.C5B77309.Up2Date
