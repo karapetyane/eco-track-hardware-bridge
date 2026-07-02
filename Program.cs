@@ -1,10 +1,13 @@
 ﻿using System.Runtime.InteropServices;
+using System.Threading;
 using EcoTrack.HardwareBridge.Services;
 
 namespace EcoTrack.HardwareBridge;
 
 internal static class Program
 {
+    private const string SingleInstanceMutexName = @"Global\EcoTrack.HardwareBridge.SingleInstance";
+
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AllocConsole();
@@ -14,19 +17,34 @@ internal static class Program
     {
         FileLogger.Instance.EnsureInitialized();
 
-        var consoleMode = ShouldRunInConsoleMode(args);
+        using var singleInstanceMutex = new Mutex(initiallyOwned: true, SingleInstanceMutexName, out var isPrimaryInstance);
 
-        if (consoleMode)
+        if (!isPrimaryInstance)
         {
-            AllocConsole();
-            Console.OutputEncoding = System.Text.Encoding.UTF8;
-            RunConsoleMode();
+            FileLogger.Instance.Log("Duplicate instance detected; exiting.");
             return;
         }
 
-        ApplicationConfiguration.Initialize();
-        var bridge = new BridgeService();
-        Application.Run(new TrayApplicationContext(bridge));
+        try
+        {
+            var consoleMode = ShouldRunInConsoleMode(args);
+
+            if (consoleMode)
+            {
+                AllocConsole();
+                Console.OutputEncoding = System.Text.Encoding.UTF8;
+                RunConsoleMode();
+                return;
+            }
+
+            ApplicationConfiguration.Initialize();
+            var bridge = new BridgeService();
+            Application.Run(new TrayApplicationContext(bridge));
+        }
+        finally
+        {
+            singleInstanceMutex.ReleaseMutex();
+        }
     }
 
     private static bool ShouldRunInConsoleMode(string[] args)
