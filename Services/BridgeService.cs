@@ -1,4 +1,5 @@
 using PCSC;
+using PCSC.Exceptions;
 using PCSC.Iso7816;
 using EcoTrack.HardwareBridge.Models;
 
@@ -6,6 +7,25 @@ namespace EcoTrack.HardwareBridge.Services;
 
 public sealed class BridgeService : IDisposable
 {
+    private const int PollIntervalMs = 300;
+    private const int MaxConsecutiveReaderFailures = 5;
+    private static readonly TimeSpan RecoveryBackoff = TimeSpan.FromSeconds(2);
+
+    // PC/SC errors that simply mean "no readable card right now" — these are normal
+    // during idle polling and must NOT trigger reader recovery.
+    private static readonly HashSet<SCardError> CardAbsentErrors = new()
+    {
+        SCardError.RemovedCard,
+        SCardError.NoSmartcard,
+        SCardError.UnpoweredCard,
+        SCardError.UnresponsiveCard,
+        SCardError.ResetCard,
+        SCardError.ProtocolMismatch,
+        SCardError.NotReady,
+        SCardError.SharingViolation,
+        SCardError.Timeout,
+    };
+
     private readonly WebSocketService _webSocket;
     private readonly bool _mirrorConsole;
     private readonly object _statusLock = new();
@@ -116,109 +136,244 @@ public sealed class BridgeService : IDisposable
 
     private async Task RunLoopAsync(CancellationToken cancellationToken)
     {
-        try
-        {
-            using var context = ContextFactory.Instance.Establish(SCardScope.System);
-            var readers = context.GetReaders();
+        LogRuntimeEvent("WebSocket listening on ws://localhost:5001");
 
-            if (readers == null || readers.Length == 0)
+        var recovering = false;
+        var recoveryAnnounced = false;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            ISCardContext? context = null;
+            string? readerName = null;
+
+            try
             {
-                LogRuntimeEvent("Reader missing: No PC/SC readers found.");
-                SetStatus(BridgeStatus.NoReader, "No PC/SC readers found.");
-                return;
+                context = ContextFactory.Instance.Establish(SCardScope.System);
+                var readers = context.GetReaders();
+                readerName = readers is { Length: > 0 } ? readers[0] : null;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                FileLogger.Instance.LogException("RFID polling error", ex);
+                MirrorToConsole($"RFID polling error: {ex.Message}");
+                readerName = null;
             }
 
-            var readerName = readers[0];
-            ReaderName = readerName;
-            string? lastUid = null;
-            var cardPresent = false;
-
-            LogRuntimeEvent($"Reader selected: {readerName}");
-            LogRuntimeEvent("WebSocket listening on ws://localhost:5001");
-
-            SetStatus(BridgeStatus.Running, $"Running on {readerName}");
-
-            while (!cancellationToken.IsCancellationRequested)
+            // No reader available: either none is attached yet, or a recovery attempt failed.
+            if (readerName == null)
             {
-                try
+                DisposeContext(context);
+
+                if (recovering && recoveryAnnounced)
                 {
-                    using var isoReader = new IsoReader(
-                        context,
-                        readerName,
-                        SCardShareMode.Shared,
-                        SCardProtocol.Any,
-                        false
-                    );
-
-                    var apdu = new CommandApdu(IsoCase.Case2Short, isoReader.ActiveProtocol)
-                    {
-                        CLA = 0xFF,
-                        INS = 0xCA,
-                        P1 = 0x00,
-                        P2 = 0x00,
-                        Le = 0x00
-                    };
-
-                    var response = isoReader.Transmit(apdu);
-
-                    if (response.SW1 == 0x90 && response.SW2 == 0x00)
-                    {
-                        var uid = BitConverter.ToString(response.GetData()).Replace("-", "");
-
-                        if (!cardPresent || uid != lastUid)
-                        {
-                            FileLogger.Instance.Log($"Card detected: {uid}");
-                            MirrorToConsole($"Card detected: {uid}");
-
-                            _webSocket.Broadcast(new RfidEvent
-                            {
-                                Uid = uid,
-                                ReadAt = DateTime.UtcNow
-                            });
-
-                            lastUid = uid;
-                            cardPresent = true;
-                            LastUid = uid;
-                            CardPresent = true;
-                            NotifyStatusChanged();
-                        }
-                    }
+                    LogRuntimeEvent("Reader recovery failed");
                 }
-                catch
+                else if (!recovering)
                 {
-                    if (cardPresent)
-                    {
-                        FileLogger.Instance.Log("Card removed");
-                        MirrorToConsole("Card removed");
-                        cardPresent = false;
-                        lastUid = null;
-                        LastUid = null;
-                        CardPresent = false;
-                        NotifyStatusChanged();
-                    }
+                    LogRuntimeEvent("Reader missing: No PC/SC readers found.");
+                    SetStatus(BridgeStatus.NoReader, "No PC/SC readers found.");
                 }
 
-                try
+                recovering = true;
+                if (!recoveryAnnounced)
                 {
-                    await Task.Delay(300, cancellationToken);
+                    LogRuntimeEvent("Reader recovery started");
+                    recoveryAnnounced = true;
                 }
-                catch (OperationCanceledException)
+
+                if (!await DelaySafeAsync(RecoveryBackoff, cancellationToken))
                 {
                     break;
                 }
+
+                continue;
             }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            FileLogger.Instance.LogException("Bridge error", ex);
-            SetStatus(BridgeStatus.Error, ex.Message);
-        }
-        finally
-        {
-            if (!cancellationToken.IsCancellationRequested && Status is BridgeStatus.Running or BridgeStatus.Starting)
+
+            // Reader available.
+            ReaderName = readerName;
+
+            if (recovering)
             {
-                SetStatus(BridgeStatus.Stopped, "Stopped");
+                LogRuntimeEvent("Reader recovery completed");
+                recovering = false;
+                recoveryAnnounced = false;
             }
+
+            LogRuntimeEvent($"Reader selected: {readerName}");
+            SetStatus(BridgeStatus.Running, $"Running on {readerName}");
+
+            try
+            {
+                await PollReaderAsync(context!, readerName, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                FileLogger.Instance.LogException("RFID polling error", ex);
+                MirrorToConsole($"RFID polling error: {ex.Message}");
+            }
+            finally
+            {
+                DisposeContext(context);
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            // PollReaderAsync returned because the reader stopped responding: begin recovery.
+            recovering = true;
+            recoveryAnnounced = true;
+            LogRuntimeEvent("Reader recovery started");
+            SetStatus(BridgeStatus.Error, "Reader not responding; recovering...");
+
+            if (!await DelaySafeAsync(RecoveryBackoff, cancellationToken))
+            {
+                break;
+            }
+        }
+
+        if (!cancellationToken.IsCancellationRequested && Status is BridgeStatus.Running or BridgeStatus.Starting)
+        {
+            SetStatus(BridgeStatus.Stopped, "Stopped");
+        }
+    }
+
+    // Polls a single reader/context until cancellation or a fatal reader failure (returns).
+    private async Task PollReaderAsync(ISCardContext context, string readerName, CancellationToken cancellationToken)
+    {
+        string? lastUid = null;
+        var cardPresent = false;
+        var consecutiveFailures = 0;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                using var isoReader = new IsoReader(
+                    context,
+                    readerName,
+                    SCardShareMode.Shared,
+                    SCardProtocol.Any,
+                    false
+                );
+
+                var apdu = new CommandApdu(IsoCase.Case2Short, isoReader.ActiveProtocol)
+                {
+                    CLA = 0xFF,
+                    INS = 0xCA,
+                    P1 = 0x00,
+                    P2 = 0x00,
+                    Le = 0x00
+                };
+
+                var response = isoReader.Transmit(apdu);
+
+                consecutiveFailures = 0;
+
+                if (response.SW1 == 0x90 && response.SW2 == 0x00)
+                {
+                    var uid = BitConverter.ToString(response.GetData()).Replace("-", "");
+
+                    if (!cardPresent || uid != lastUid)
+                    {
+                        FileLogger.Instance.Log($"Card detected: {uid}");
+                        MirrorToConsole($"Card detected: {uid}");
+
+                        _webSocket.Broadcast(new RfidEvent
+                        {
+                            Uid = uid,
+                            ReadAt = DateTime.UtcNow
+                        });
+
+                        lastUid = uid;
+                        cardPresent = true;
+                        LastUid = uid;
+                        CardPresent = true;
+                        NotifyStatusChanged();
+                    }
+                }
+                else if (cardPresent)
+                {
+                    HandleCardRemoved(ref cardPresent, ref lastUid);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (IsCardAbsentError(ex))
+                {
+                    // Normal idle state: no card on the reader.
+                    consecutiveFailures = 0;
+                    if (cardPresent)
+                    {
+                        HandleCardRemoved(ref cardPresent, ref lastUid);
+                    }
+                }
+                else
+                {
+                    // Genuine reader/context failure.
+                    consecutiveFailures++;
+                    FileLogger.Instance.LogException("RFID polling error", ex);
+                    MirrorToConsole($"RFID polling error: {ex.Message}");
+
+                    if (cardPresent)
+                    {
+                        HandleCardRemoved(ref cardPresent, ref lastUid);
+                    }
+
+                    if (consecutiveFailures >= MaxConsecutiveReaderFailures)
+                    {
+                        // Escalate to the outer loop to recreate the PC/SC context.
+                        return;
+                    }
+                }
+            }
+
+            if (!await DelaySafeAsync(TimeSpan.FromMilliseconds(PollIntervalMs), cancellationToken))
+            {
+                return;
+            }
+        }
+    }
+
+    private void HandleCardRemoved(ref bool cardPresent, ref string? lastUid)
+    {
+        FileLogger.Instance.Log("Card removed");
+        MirrorToConsole("Card removed");
+        cardPresent = false;
+        lastUid = null;
+        LastUid = null;
+        CardPresent = false;
+        NotifyStatusChanged();
+    }
+
+    private static bool IsCardAbsentError(Exception ex)
+    {
+        return ex is PCSCException pcsc && CardAbsentErrors.Contains(pcsc.SCardError);
+    }
+
+    private static void DisposeContext(ISCardContext? context)
+    {
+        try
+        {
+            context?.Dispose();
+        }
+        catch
+        {
+            // Best-effort cleanup during reader recovery.
+        }
+    }
+
+    private static async Task<bool> DelaySafeAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(delay, cancellationToken);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
         }
     }
 
