@@ -1,16 +1,26 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\tray.ico</ApplicationIcon>
+    <AssemblyName>EcoTrack.HardwareBridge</AssemblyName>
+    <RootNamespace>EcoTrack.HardwareBridge</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Fleck" Version="1.2.0" />
     <PackageReference Include="PCSC" Version="7.0.1" />
     <PackageReference Include="PCSC.Iso7816" Version="7.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Assets\tray.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

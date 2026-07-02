@@ -1,85 +1,65 @@
-﻿using PCSC;
-using PCSC.Iso7816;
-using EcoTrack.HardwareBridge.Models;
+﻿using System.Runtime.InteropServices;
 using EcoTrack.HardwareBridge.Services;
 
-Console.OutputEncoding = System.Text.Encoding.UTF8;
+namespace EcoTrack.HardwareBridge;
 
-Console.WriteLine("EcoTrack Hardware Bridge");
-Console.WriteLine("RFID monitor + WebSocket mode");
-Console.WriteLine();
-
-var webSocketService = new WebSocketService();
-
-using var context = ContextFactory.Instance.Establish(SCardScope.System);
-var readers = context.GetReaders();
-
-if (readers == null || readers.Length == 0)
+internal static class Program
 {
-    Console.WriteLine("No PC/SC readers found.");
-    return;
-}
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AllocConsole();
 
-var readerName = readers[0];
-string? lastUid = null;
-var cardPresent = false;
-
-Console.WriteLine($"Using reader: {readerName}");
-Console.WriteLine("WebSocket listening on ws://localhost:5001");
-Console.WriteLine("Place RFID card on reader...");
-Console.WriteLine();
-
-while (true)
-{
-    try
+    [STAThread]
+    private static void Main(string[] args)
     {
-        using var isoReader = new IsoReader(
-            context,
-            readerName,
-            SCardShareMode.Shared,
-            SCardProtocol.Any,
-            false
-        );
+        var consoleMode = ShouldRunInConsoleMode(args);
 
-        var apdu = new CommandApdu(IsoCase.Case2Short, isoReader.ActiveProtocol)
+        if (consoleMode)
         {
-            CLA = 0xFF,
-            INS = 0xCA,
-            P1 = 0x00,
-            P2 = 0x00,
-            Le = 0x00
+            AllocConsole();
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            RunConsoleMode();
+            return;
+        }
+
+        ApplicationConfiguration.Initialize();
+        var bridge = new BridgeService();
+        Application.Run(new TrayApplicationContext(bridge));
+    }
+
+    private static bool ShouldRunInConsoleMode(string[] args)
+    {
+        if (args.Any(arg => string.Equals(arg, "--console", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        var env = Environment.GetEnvironmentVariable("ECOTRACK_BRIDGE_CONSOLE");
+        return string.Equals(env, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(env, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void RunConsoleMode()
+    {
+        Console.WriteLine("EcoTrack Hardware Bridge");
+        Console.WriteLine("RFID monitor + WebSocket mode (console)");
+        Console.WriteLine();
+
+        using var bridge = new BridgeService(Console.WriteLine);
+        using var shutdown = new ManualResetEventSlim(false);
+
+        Console.CancelKeyPress += (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            shutdown.Set();
         };
 
-        var response = isoReader.Transmit(apdu);
+        bridge.Start();
 
-        if (response.SW1 == 0x90 && response.SW2 == 0x00)
-        {
-            var uid = BitConverter.ToString(response.GetData()).Replace("-", "");
+        shutdown.Wait();
+        bridge.Stop();
 
-            if (!cardPresent || uid != lastUid)
-            {
-                Console.WriteLine($"Card detected: {uid}");
-
-                webSocketService.Broadcast(new RfidEvent
-                {
-                    Uid = uid,
-                    ReadAt = DateTime.UtcNow
-                });
-
-                lastUid = uid;
-                cardPresent = true;
-            }
-        }
+        Console.WriteLine();
+        Console.WriteLine("Bridge stopped.");
     }
-    catch
-    {
-        if (cardPresent)
-        {
-            Console.WriteLine("Card removed");
-            cardPresent = false;
-            lastUid = null;
-        }
-    }
-
-    Thread.Sleep(300);
 }

@@ -4,13 +4,16 @@ using EcoTrack.HardwareBridge.Models;
 
 namespace EcoTrack.HardwareBridge.Services;
 
-public sealed class WebSocketService
+public sealed class WebSocketService : IDisposable
 {
     private readonly WebSocketServer _server;
     private readonly List<IWebSocketConnection> _clients = new();
+    private readonly object _clientsLock = new();
+    private readonly Action<string> _log;
 
-    public WebSocketService()
+    public WebSocketService(Action<string>? log = null)
     {
+        _log = log ?? (_ => { });
         FleckLog.Level = LogLevel.Warn;
 
         _server = new WebSocketServer("ws://0.0.0.0:5001");
@@ -19,25 +22,73 @@ public sealed class WebSocketService
         {
             socket.OnOpen = () =>
             {
-                Console.WriteLine("Frontend connected.");
-                _clients.Add(socket);
+                _log("Frontend connected.");
+                lock (_clientsLock)
+                {
+                    _clients.Add(socket);
+                }
             };
 
             socket.OnClose = () =>
             {
-                Console.WriteLine("Frontend disconnected.");
-                _clients.Remove(socket);
+                _log("Frontend disconnected.");
+                lock (_clientsLock)
+                {
+                    _clients.Remove(socket);
+                }
             };
         });
+    }
+
+    public int ConnectedClientCount
+    {
+        get
+        {
+            lock (_clientsLock)
+            {
+                return _clients.Count;
+            }
+        }
     }
 
     public void Broadcast(RfidEvent evt)
     {
         var json = JsonSerializer.Serialize(evt);
+        IWebSocketConnection[] clients;
 
-        foreach (var client in _clients)
+        lock (_clientsLock)
+        {
+            clients = _clients.ToArray();
+        }
+
+        foreach (var client in clients)
         {
             client.Send(json);
         }
+    }
+
+    public void Dispose()
+    {
+        IWebSocketConnection[] clients;
+
+        lock (_clientsLock)
+        {
+            clients = _clients.ToArray();
+            _clients.Clear();
+        }
+
+        foreach (var client in clients)
+        {
+            try
+            {
+                client.Close();
+            }
+            catch
+            {
+                // Best-effort shutdown.
+            }
+        }
+
+        _server.Dispose();
     }
 }
