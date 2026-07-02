@@ -9,11 +9,8 @@ public sealed class WebSocketService : IDisposable
     private readonly WebSocketServer _server;
     private readonly List<IWebSocketConnection> _clients = new();
     private readonly object _clientsLock = new();
-    private readonly Action<string> _log;
-
-    public WebSocketService(Action<string>? log = null)
+    public WebSocketService(Action<string>? consoleMirror = null)
     {
-        _log = log ?? (_ => { });
         FleckLog.Level = LogLevel.Warn;
 
         _server = new WebSocketServer("ws://0.0.0.0:5001");
@@ -22,7 +19,8 @@ public sealed class WebSocketService : IDisposable
         {
             socket.OnOpen = () =>
             {
-                _log("Frontend connected.");
+                FileLogger.Instance.Log("Frontend connected");
+                consoleMirror?.Invoke("Frontend connected");
                 lock (_clientsLock)
                 {
                     _clients.Add(socket);
@@ -31,7 +29,8 @@ public sealed class WebSocketService : IDisposable
 
             socket.OnClose = () =>
             {
-                _log("Frontend disconnected.");
+                FileLogger.Instance.Log("Frontend disconnected");
+                consoleMirror?.Invoke("Frontend disconnected");
                 lock (_clientsLock)
                 {
                     _clients.Remove(socket);
@@ -83,9 +82,9 @@ public sealed class WebSocketService : IDisposable
             {
                 client.Close();
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort shutdown.
+                FileLogger.Instance.LogException("WebSocket client close error", ex);
             }
         }
 

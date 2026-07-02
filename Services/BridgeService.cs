@@ -7,16 +7,16 @@ namespace EcoTrack.HardwareBridge.Services;
 public sealed class BridgeService : IDisposable
 {
     private readonly WebSocketService _webSocket;
-    private readonly Action<string> _log;
+    private readonly bool _mirrorConsole;
     private readonly object _statusLock = new();
 
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
 
-    public BridgeService(Action<string>? log = null)
+    public BridgeService(bool mirrorConsole = false)
     {
-        _log = log ?? (_ => { });
-        _webSocket = new WebSocketService(_log);
+        _mirrorConsole = mirrorConsole;
+        _webSocket = new WebSocketService(mirrorConsole ? Console.WriteLine : null);
     }
 
     public BridgeStatus Status { get; private set; } = BridgeStatus.Stopped;
@@ -44,6 +44,7 @@ public sealed class BridgeService : IDisposable
         _cts?.Dispose();
         _cts = new CancellationTokenSource();
 
+        LogRuntimeEvent("Bridge started");
         SetStatus(BridgeStatus.Starting, "Starting RFID monitor and WebSocket...");
 
         _loopTask = Task.Run(() => RunLoopAsync(_cts.Token));
@@ -62,12 +63,23 @@ public sealed class BridgeService : IDisposable
         {
             _loopTask?.Wait(TimeSpan.FromSeconds(5));
         }
-        catch (AggregateException)
+        catch (AggregateException ex)
         {
-            // Expected when the loop is cancelled.
+            foreach (var inner in ex.InnerExceptions)
+            {
+                if (inner is not OperationCanceledException)
+                {
+                    FileLogger.Instance.LogException("Bridge stop error", inner);
+                }
+            }
         }
 
+        LogRuntimeEvent("Bridge stopped");
         SetStatus(BridgeStatus.Stopped, "Stopped");
+
+        _cts.Dispose();
+        _cts = null;
+        _loopTask = null;
     }
 
     public string GetStatusSummary()
@@ -111,7 +123,7 @@ public sealed class BridgeService : IDisposable
 
             if (readers == null || readers.Length == 0)
             {
-                _log("No PC/SC readers found.");
+                LogRuntimeEvent("Reader missing: No PC/SC readers found.");
                 SetStatus(BridgeStatus.NoReader, "No PC/SC readers found.");
                 return;
             }
@@ -121,9 +133,8 @@ public sealed class BridgeService : IDisposable
             string? lastUid = null;
             var cardPresent = false;
 
-            _log($"Using reader: {readerName}");
-            _log("WebSocket listening on ws://localhost:5001");
-            _log("Place RFID card on reader...");
+            LogRuntimeEvent($"Reader selected: {readerName}");
+            LogRuntimeEvent("WebSocket listening on ws://localhost:5001");
 
             SetStatus(BridgeStatus.Running, $"Running on {readerName}");
 
@@ -156,7 +167,8 @@ public sealed class BridgeService : IDisposable
 
                         if (!cardPresent || uid != lastUid)
                         {
-                            _log($"Card detected: {uid}");
+                            FileLogger.Instance.Log($"Card detected: {uid}");
+                            MirrorToConsole($"Card detected: {uid}");
 
                             _webSocket.Broadcast(new RfidEvent
                             {
@@ -176,7 +188,8 @@ public sealed class BridgeService : IDisposable
                 {
                     if (cardPresent)
                     {
-                        _log("Card removed");
+                        FileLogger.Instance.Log("Card removed");
+                        MirrorToConsole("Card removed");
                         cardPresent = false;
                         lastUid = null;
                         LastUid = null;
@@ -197,7 +210,7 @@ public sealed class BridgeService : IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _log($"Bridge error: {ex.Message}");
+            FileLogger.Instance.LogException("Bridge error", ex);
             SetStatus(BridgeStatus.Error, ex.Message);
         }
         finally
@@ -206,6 +219,20 @@ public sealed class BridgeService : IDisposable
             {
                 SetStatus(BridgeStatus.Stopped, "Stopped");
             }
+        }
+    }
+
+    private void LogRuntimeEvent(string message)
+    {
+        FileLogger.Instance.Log(message);
+        MirrorToConsole(message);
+    }
+
+    private void MirrorToConsole(string message)
+    {
+        if (_mirrorConsole)
+        {
+            Console.WriteLine(message);
         }
     }
 

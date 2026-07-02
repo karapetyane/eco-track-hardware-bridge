@@ -12,6 +12,8 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        FileLogger.Instance.EnsureInitialized();
+
         var consoleMode = ShouldRunInConsoleMode(args);
 
         if (consoleMode)
@@ -29,14 +31,7 @@ internal static class Program
 
     private static bool ShouldRunInConsoleMode(string[] args)
     {
-        if (args.Any(arg => string.Equals(arg, "--console", StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        var env = Environment.GetEnvironmentVariable("ECOTRACK_BRIDGE_CONSOLE");
-        return string.Equals(env, "1", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(env, "true", StringComparison.OrdinalIgnoreCase);
+        return args.Any(arg => string.Equals(arg, "--console", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void RunConsoleMode()
@@ -45,7 +40,7 @@ internal static class Program
         Console.WriteLine("RFID monitor + WebSocket mode (console)");
         Console.WriteLine();
 
-        using var bridge = new BridgeService(Console.WriteLine);
+        using var bridge = new BridgeService(mirrorConsole: true);
         using var shutdown = new ManualResetEventSlim(false);
 
         Console.CancelKeyPress += (_, eventArgs) =>

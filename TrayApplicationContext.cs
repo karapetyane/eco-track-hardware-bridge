@@ -34,6 +34,8 @@ public sealed class TrayApplicationContext : ApplicationContext
 
         _notifyIcon.DoubleClick += (_, _) => ShowStatusDialog();
 
+        FileLogger.Instance.Log("Tray app started");
+
         _bridge.Start();
         UpdateTrayPresentation();
     }
@@ -76,6 +78,7 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private void OnExitClick(object? sender, EventArgs e)
     {
+        _bridge.Stop();
         ExitThread();
     }
 
