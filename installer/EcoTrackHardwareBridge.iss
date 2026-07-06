@@ -197,7 +197,7 @@ end;
 function TryParseCheckpointInput(const Value: String; var CheckpointId: Integer): Boolean;
 var
   Trimmed: String;
-  ErrorCode: Integer;
+  I: Integer;
 begin
   Result := False;
   CheckpointId := -1;
@@ -206,10 +206,11 @@ begin
   if Trimmed = '' then
     Exit;
 
-  Val(Trimmed, CheckpointId, ErrorCode);
-  if ErrorCode <> 0 then
-    Exit;
+  for I := 1 to Length(Trimmed) do
+    if not ((Trimmed[I] >= '0') and (Trimmed[I] <= '9')) then
+      Exit;
 
+  CheckpointId := StrToIntDef(Trimmed, -1);
   Result := (CheckpointId >= 1) and (CheckpointId <= 999);
 end;
 
