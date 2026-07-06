@@ -233,14 +233,11 @@ begin
 
   CheckpointPage.Add('Checkpoint ID:', False);
 
-  if IsUpgrade() then
   begin
-    InstallLocation := GetUninstallInstallLocation();
-    if InstallLocation <> '' then
-      ExistingConfigPath := InstallLocation + '\bridge.config.json'
-    else
-      ExistingConfigPath := ExpandConstant('{app}\bridge.config.json');
+  ExistingConfigPath := ExpandConstant('{app}\bridge.config.json');
 
+  if FileExists(ExistingConfigPath) then
+  begin
     if ReadExistingIdentity(ExistingConfigPath, ExistingCheckpointId, ExistingBridgeId) then
       SkipCheckpointPage := True;
   end;
