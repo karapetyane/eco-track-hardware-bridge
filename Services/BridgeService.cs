@@ -1,6 +1,7 @@
 using PCSC;
 using PCSC.Exceptions;
 using PCSC.Iso7816;
+using EcoTrack.HardwareBridge.Configuration;
 using EcoTrack.HardwareBridge.Models;
 
 namespace EcoTrack.HardwareBridge.Services;
@@ -26,17 +27,21 @@ public sealed class BridgeService : IDisposable
         SCardError.Timeout,
     };
 
+    private readonly BridgeSettings _settings;
     private readonly WebSocketService _webSocket;
+    private readonly CloudSyncService _cloudSync;
     private readonly bool _mirrorConsole;
     private readonly object _statusLock = new();
 
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
 
-    public BridgeService(bool mirrorConsole = false)
+    public BridgeService(BridgeSettings settings, bool mirrorConsole = false)
     {
+        _settings = settings;
         _mirrorConsole = mirrorConsole;
-        _webSocket = new WebSocketService(mirrorConsole ? Console.WriteLine : null);
+        _webSocket = new WebSocketService(settings.WebSocket, mirrorConsole ? Console.WriteLine : null);
+        _cloudSync = new CloudSyncService(settings);
     }
 
     public BridgeStatus Status { get; private set; } = BridgeStatus.Stopped;
@@ -113,7 +118,7 @@ public sealed class BridgeService : IDisposable
                 $"Status: {Status}",
                 $"Detail: {StatusMessage}",
                 $"Reader: {ReaderName ?? "—"}",
-                $"WebSocket: ws://localhost:5001",
+                $"WebSocket: ws://{_settings.WebSocket.Host}:{_settings.WebSocket.Port}",
                 $"Connected clients: {ConnectedClients}",
                 $"Card present: {(CardPresent ? "Yes" : "No")}",
             };
@@ -131,12 +136,13 @@ public sealed class BridgeService : IDisposable
     {
         Stop();
         _cts?.Dispose();
+        _cloudSync.Dispose();
         _webSocket.Dispose();
     }
 
     private async Task RunLoopAsync(CancellationToken cancellationToken)
     {
-        LogRuntimeEvent("WebSocket listening on ws://localhost:5001");
+        LogRuntimeEvent($"WebSocket listening on ws://{_settings.WebSocket.Host}:{_settings.WebSocket.Port}");
 
         var recovering = false;
         var recoveryAnnounced = false;
@@ -280,11 +286,14 @@ public sealed class BridgeService : IDisposable
                         FileLogger.Instance.Log($"Card detected: {uid}");
                         MirrorToConsole($"Card detected: {uid}");
 
-                        _webSocket.Broadcast(new RfidEvent
+                        var rfidEvent = new RfidEvent
                         {
                             Uid = uid,
                             ReadAt = DateTime.UtcNow
-                        });
+                        };
+
+                        _webSocket.Broadcast(rfidEvent);
+                        _cloudSync.TryPublishRfidScan(rfidEvent);
 
                         lastUid = uid;
                         cardPresent = true;

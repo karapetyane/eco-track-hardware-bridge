@@ -1,0 +1,11 @@
+{
+  "ApiUrl": "",
+  "ApiKey": "",
+  "BridgeId": "",
+  "CheckpointId": null,
+  "EnableCloudSync": false,
+  "WebSocket": {
+    "Host": "0.0.0.0",
+    "Port": 5001
+  }
+}

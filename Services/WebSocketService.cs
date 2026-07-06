@@ -1,5 +1,6 @@
 using Fleck;
 using System.Text.Json;
+using EcoTrack.HardwareBridge.Configuration;
 using EcoTrack.HardwareBridge.Models;
 
 namespace EcoTrack.HardwareBridge.Services;
@@ -9,11 +10,12 @@ public sealed class WebSocketService : IDisposable
     private readonly WebSocketServer _server;
     private readonly List<IWebSocketConnection> _clients = new();
     private readonly object _clientsLock = new();
-    public WebSocketService(Action<string>? consoleMirror = null)
+
+    public WebSocketService(WebSocketSettings settings, Action<string>? consoleMirror = null)
     {
         FleckLog.Level = LogLevel.Warn;
 
-        _server = new WebSocketServer("ws://0.0.0.0:5001");
+        _server = new WebSocketServer($"ws://{settings.Host}:{settings.Port}");
 
         _server.Start(socket =>
         {
