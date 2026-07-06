@@ -233,7 +233,7 @@ begin
 
   CheckpointPage.Add('Checkpoint ID:', False);
 
-  if IsUpgrade() then
+  if True then
   begin
     InstallLocation := GetUninstallInstallLocation();
     if InstallLocation <> '' then
