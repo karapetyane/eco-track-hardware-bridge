@@ -134,7 +134,7 @@ begin
 
   Digits := '';
   I := ValueStart;
-  while (I <= Length(Tail)) and (Tail[I] in ['0'..'9']) do
+  while (I <= Length(Tail)) and (Tail[I] >= '0') and (Tail[I] <= '9') do
   begin
     Digits := Digits + Tail[I];
     Inc(I);
