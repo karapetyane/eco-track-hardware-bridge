@@ -233,7 +233,6 @@ begin
 
   CheckpointPage.Add('Checkpoint ID:', False);
 
-  begin
   ExistingConfigPath := ExpandConstant('{app}\bridge.config.json');
 
   if FileExists(ExistingConfigPath) then
